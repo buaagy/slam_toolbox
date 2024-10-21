@@ -6789,6 +6789,7 @@ public:
 
   /**
    * Compute lookup table of the points of the given scan for the given angular space
+   * 制作角度查找表
    * @param pScan the scan
    * @param angleCenter
    * @param angleOffset computes lookup arrays for the angles within this offset around angleStart
@@ -6802,7 +6803,8 @@ public:
   {
     assert(angleOffset != 0.0);
     assert(angleResolution != 0.0);
-
+    
+    // 计算角度的数量
     kt_int32u nAngles =
       static_cast<kt_int32u>(math::Round(angleOffset * 2.0 / angleResolution) + 1);
     SetSize(nAngles);
@@ -6837,6 +6839,7 @@ public:
 private:
   /**
    * Compute lookup value of points for given angle
+   * 对于给定角度,计算查找表的值
    * @param angleIndex
    * @param angle
    * @param rLocalPoints

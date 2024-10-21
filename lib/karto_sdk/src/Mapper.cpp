@@ -43,6 +43,7 @@ BOOST_CLASS_EXPORT(karto::Edge<karto::LocalizedRangeScan>);
 BOOST_CLASS_EXPORT(karto::Vertex<karto::LocalizedRangeScan>);
 BOOST_CLASS_EXPORT(karto::MapperSensorManager)
 BOOST_CLASS_EXPORT(karto::Mapper)
+
 namespace karto
 {
 
@@ -188,6 +189,7 @@ public:
     Pose2 backScanPose = m_RunningScans.back()->GetSensorPose();
 
     // cap vector size and remove all scans from front of vector that are too far from end of vector
+    // 去掉距离当前位置远的所有scan
     kt_double squaredDistance = frontScanPose.GetPosition().SquaredDistance(
       backScanPose.GetPosition());
     while (m_RunningScans.size() > m_RunningBufferMaximumSize ||
@@ -209,6 +211,7 @@ public:
    */
   void RemoveScan(LocalizedRangeScan * pScan)
   {
+    // 查询指定ID的scan
     LocalizedRangeScanMap::iterator it = m_Scans.find(pScan->GetStateId());
     if (it != m_Scans.end()) {
       it->second = NULL;
@@ -523,6 +526,7 @@ ScanMatcher * ScanMatcher::Create(
 
 /**
  * Match given scan against set of scans
+ * 核心函数:将给定scan与一组scans进行匹配
  * @param pScan scan being scan-matched
  * @param rBaseScans set of scans whose points will mark cells in grid as being occupied
  * @param rMean output parameter of mean (best pose) of match
@@ -544,6 +548,7 @@ kt_double ScanMatcher::MatchScan(
 
   // scan has no readings; cannot do scan matching
   // best guess of pose is based off of adjusted odometer reading
+  // 如果scan没有数据
   if (pScan->GetNumberOfRangeReadings() == 0) {
     rMean = scanPose;
 
@@ -638,6 +643,7 @@ kt_double ScanMatcher::MatchScan(
   return bestResponse;
 }
 
+// 计算所有候选位姿的得分
 void ScanMatcher::operator()(const kt_double & y) const
 {
   kt_int32u poseResponseCounter;
@@ -649,6 +655,7 @@ void ScanMatcher::operator()(const kt_double & y) const
   kt_double newPositionY = m_rSearchCenter.GetY() + y;
   kt_double squareY = math::Square(y);
 
+  // 遍历x方向
   for (std::vector<kt_double>::const_iterator xIter = m_xPoses.begin(); xIter != m_xPoses.end();
     ++xIter)
   {
@@ -664,6 +671,7 @@ void ScanMatcher::operator()(const kt_double & y) const
 
     kt_double angle = 0.0;
     kt_double startAngle = m_rSearchCenter.GetHeading() - m_searchAngleOffset;
+    // 遍历角度
     for (kt_int32u angleIndex = 0; angleIndex < m_nAngles; angleIndex++) {
       angle = startAngle + angleIndex * m_searchAngleResolution;
 
@@ -697,6 +705,7 @@ void ScanMatcher::operator()(const kt_double & y) const
  * Finds the best pose for the scan centering the search in the correlation grid
  * at the given pose and search in the space by the vector and angular offsets
  * in increments of the given resolutions
+ * 核心函数
  * @param rScan scan to match against correlation grid
  * @param rSearchCenter the center of the search space
  * @param rSearchSpaceOffset searches poses in the area offset by this vector around search center
@@ -719,6 +728,7 @@ kt_double ScanMatcher::CorrelateScan(
   assert(searchAngleResolution != 0.0);
 
   // setup lookup arrays
+  // 制作角度查找表
   m_pGridLookup->ComputeOffsets(pScan,
     rSearchCenter.GetHeading(), searchAngleOffset, searchAngleResolution);
 
@@ -732,7 +742,7 @@ kt_double ScanMatcher::CorrelateScan(
   }
 
   // calculate position arrays
-
+  // 计算x方向的偏移array
   m_xPoses.clear();
   kt_int32u nX = static_cast<kt_int32u>(math::Round(rSearchSpaceOffset.GetX() *
     2.0 / rSearchSpaceResolution.GetX()) + 1);
@@ -741,7 +751,7 @@ kt_double ScanMatcher::CorrelateScan(
     m_xPoses.push_back(startX + xIndex * rSearchSpaceResolution.GetX());
   }
   assert(math::DoubleEqual(m_xPoses.back(), -startX));
-
+  // 计算y方向的偏移array
   m_yPoses.clear();
   kt_int32u nY = static_cast<kt_int32u>(math::Round(rSearchSpaceOffset.GetY() *
     2.0 / rSearchSpaceResolution.GetY()) + 1);
@@ -752,9 +762,9 @@ kt_double ScanMatcher::CorrelateScan(
   assert(math::DoubleEqual(m_yPoses.back(), -startY));
 
   // calculate pose response array size
+  // 计算候选位姿的数量(x*y*angle)
   kt_int32u nAngles =
     static_cast<kt_int32u>(math::Round(searchAngleOffset * 2.0 / searchAngleResolution) + 1);
-
   kt_int32u poseResponseSize = static_cast<kt_int32u>(m_xPoses.size() * m_yPoses.size() * nAngles);
 
   // allocate array
@@ -765,6 +775,7 @@ kt_double ScanMatcher::CorrelateScan(
       startX, rSearchCenter.GetY() + startY));
 
   // this isn't good but its the fastest way to iterate. Should clean up later.
+  // 计算所有候选位姿的得分
   m_rSearchCenter = rSearchCenter;
   m_searchAngleOffset = searchAngleOffset;
   m_nAngles = nAngles;
@@ -773,8 +784,10 @@ kt_double ScanMatcher::CorrelateScan(
   tbb::parallel_for_each(m_yPoses, (*this));
 
   // find value of best response (in [0; 1])
+  // 遍历所有候选位姿,找到最高得分值
   kt_double bestResponse = -1;
   for (kt_int32u i = 0; i < poseResponseSize; i++) {
+    // 更新得分
     bestResponse = math::Maximum(bestResponse, m_pPoseResponse[i].first);
 
     // will compute positional covariance, save best relative probability for each cell
@@ -800,10 +813,12 @@ kt_double ScanMatcher::CorrelateScan(
   }
 
   // average all poses with same highest response
+  // 对于同样高得分的结果取平均
   Vector2<kt_double> averagePosition;
   kt_double thetaX = 0.0;
   kt_double thetaY = 0.0;
   kt_int32s averagePoseCount = 0;
+  // 遍历所有候选位姿,找到所有等于最高得分值的位姿
   for (kt_int32u i = 0; i < poseResponseSize; i++) {
     if (math::DoubleEqual(m_pPoseResponse[i].first, bestResponse)) {
       averagePosition += m_pPoseResponse[i].second.GetPosition();
@@ -815,7 +830,8 @@ kt_double ScanMatcher::CorrelateScan(
       averagePoseCount++;
     }
   }
-
+  
+  // 计算平均位姿
   Pose2 averagePose;
   if (averagePoseCount > 0) {
     averagePosition /= averagePoseCount;
